@@ -655,12 +655,34 @@ function showToast(msg){
   const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
   setTimeout(()=>t.classList.remove('show'), 1800);
 }
+/* 폰마다 기본으로 고르는 영어 음성 품질이 들쭉날쭉해서(로봇 음성이 걸릴 때가 있음),
+   가능하면 Google의 신경망 기반 en-US 음성을 명시적으로 골라서 쓴다.
+   voices 목록은 비동기로 채워질 때가 있어서 캐시해두고 필요하면 이벤트로 갱신한다. */
+let CACHED_VOICES = [];
+function refreshVoices(){
+  try{ CACHED_VOICES = window.speechSynthesis.getVoices() || []; }catch(e){}
+}
+if('speechSynthesis' in window){
+  refreshVoices();
+  window.speechSynthesis.onvoiceschanged = refreshVoices;
+}
+function pickBestEnglishVoice(){
+  if(!CACHED_VOICES.length) refreshVoices();
+  const enVoices = CACHED_VOICES.filter(v=>v.lang && v.lang.toLowerCase().startsWith('en'));
+  if(!enVoices.length) return null;
+  const usVoices = enVoices.filter(v=>v.lang.toLowerCase()==='en-us');
+  const pool = usVoices.length ? usVoices : enVoices;
+  const google = pool.find(v=>/google/i.test(v.name));
+  return google || pool[0];
+}
 function speak(text, rate){
   try{
     if(!('speechSynthesis' in window)) return;
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
     u.lang='en-US'; u.rate = rate || 0.95; u.pitch = 1.05;
+    const bestVoice = pickBestEnglishVoice();
+    if(bestVoice) u.voice = bestVoice;
     window.speechSynthesis.speak(u);
   }catch(e){}
 }
