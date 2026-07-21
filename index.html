@@ -971,7 +971,7 @@ async function performActualSave(){
     if(data.ok){
       ensureTagRegistered(finalTag);
       DATA.push({
-        id: 'CUSTOM'+Date.now(), ageBand:'18-23', tag:finalTag, type:'상황매칭객관식',
+        id: 'CUSTOM'+Date.now(), ageBand: toSave.ageBand || ageBandFor(monthsBetween(STATE.profile.birth)), tag:finalTag, type:'상황매칭객관식',
         pattern: toSave.pattern, answer: toSave.answer, distractors: toSave.distractors||[],
         meaning: toSave.meaning, tip: toSave.tip, variant: toSave.variant, radio:true
       });
@@ -994,7 +994,8 @@ async function runAiGenerate(situ){
   STATE.ai = {status:'loading', item:null, chosenTag:null, useCustomTag:false, customTagValue:'', errorMsg:'', similarMatches:null};
   renderAppOnly();
   try{
-    const res = await fetch(GAS_URL, {method:'POST', body: JSON.stringify({action:'generate', situation: situ, exclude})});
+    const ageMonths = monthsBetween(STATE.profile.birth);
+    const res = await fetch(GAS_URL, {method:'POST', body: JSON.stringify({action:'generate', situation: situ, exclude, ageMonths})});
     const data = await res.json();
     if(data.ok && data.item){
       if(!STATE.aiHistory[situ]) STATE.aiHistory[situ] = [];
@@ -1876,26 +1877,51 @@ function screenSettings(){
 function bindSettings(){
   const notifStatus = document.getElementById('notif-status');
   const notifBtn = document.getElementById('notif-enable');
+  function renderNotifUi(OneSignal){
+    const permission = OneSignal.Notifications.permission;
+    const optedIn = OneSignal.User.PushSubscription.optedIn;
+    if(!permission){
+      if(notifStatus) notifStatus.textContent = '꺼짐';
+      if(notifBtn){ notifBtn.textContent = '🔔 알림 받기'; notifBtn.disabled = false; notifBtn.dataset.mode = 'request'; }
+    } else if(optedIn){
+      if(notifStatus) notifStatus.textContent = '켜짐 ✓';
+      if(notifBtn){ notifBtn.textContent = '🔕 알림 끄기'; notifBtn.disabled = false; notifBtn.dataset.mode = 'optout'; }
+    } else {
+      if(notifStatus) notifStatus.textContent = '꺼짐 (구독 해제됨)';
+      if(notifBtn){ notifBtn.textContent = '🔔 알림 다시 켜기'; notifBtn.disabled = false; notifBtn.dataset.mode = 'optin'; }
+    }
+  }
   if(window.OneSignalDeferred){
     let resolved = false;
     setTimeout(()=>{ if(!resolved && notifStatus) notifStatus.textContent = '불러오기 실패 (새로고침 필요)'; }, 6000);
     OneSignalDeferred.push(async function(OneSignal){
       resolved = true;
-      try{
-        const enabled = OneSignal.Notifications.permission;
-        if(notifStatus) notifStatus.textContent = enabled ? '켜짐 ✓' : '꺼짐';
-        if(notifBtn && enabled){ notifBtn.textContent = '✓ 알림 켜짐'; notifBtn.disabled = true; }
-      }catch(e){ if(notifStatus) notifStatus.textContent = '지원 안 됨'; }
+      try{ renderNotifUi(OneSignal); }
+      catch(e){ if(notifStatus) notifStatus.textContent = '지원 안 됨'; }
     });
   } else if(notifStatus){ notifStatus.textContent = '지원 안 됨'; }
   if(notifBtn) notifBtn.onclick = ()=>{
     if(!window.OneSignalDeferred){ showToast('이 브라우저에서는 알림을 지원하지 않아요'); return; }
     OneSignalDeferred.push(async function(OneSignal){
       try{
-        await OneSignal.Notifications.requestPermission();
-        showToast('알림이 켜졌어요!');
-        render();
-      }catch(e){ showToast('알림 권한 요청에 실패했어요'); }
+        const mode = notifBtn.dataset.mode;
+        if(mode === 'optout'){
+          await OneSignal.User.PushSubscription.optOut();
+          showToast('알림을 껐어요');
+        } else if(mode === 'optin'){
+          await OneSignal.User.PushSubscription.optIn();
+          showToast('알림을 다시 켰어요');
+        } else {
+          await OneSignal.Notifications.requestPermission();
+          if(OneSignal.Notifications.permission){
+            await OneSignal.User.PushSubscription.optIn();
+            showToast('알림이 켜졌어요!');
+          } else {
+            showToast('알림이 차단됐어요. 폰 설정에서 이 사이트 알림을 허용해주세요');
+          }
+        }
+        renderNotifUi(OneSignal);
+      }catch(e){ showToast('알림 설정 변경에 실패했어요: ' + (e && e.message ? e.message : e)); }
     });
   };
   document.getElementById('set-save').onclick = async ()=>{
