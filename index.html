@@ -334,6 +334,17 @@
   }
   .modal-sheet .close-x{background:none;border:none;font-size:14px;color:var(--ink-soft);font-weight:600;}
 </style>
+  <script src="https://cdn.onesignal.com/sdks/OneSignalSDK.page.js" defer></script>
+  <script>
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+    OneSignalDeferred.push(async function(OneSignal) {
+      await OneSignal.init({
+        appId: "c1dd7842-95b8-4d43-9315-2945fb29cd7a",
+        serviceWorkerPath: "sw.js",
+        serviceWorkerParam: { scope: "./" }
+      });
+    });
+  </script>
 </head>
 <body>
 <div id="phone">
@@ -465,7 +476,7 @@ let STATE = {
   searchTerm:'',
   detailItem:null,
   notebookFilter:'all',
-  radio:{playing:false, sourceTag:'today', minutes:10, idx:0, list:[], remainMs:0, timerHandle:null},
+  radio:{playing:false, sourceTag:'today', minutes:10, idx:0, list:[], remainMs:0, timerHandle:null, mode:'bilingual'},
   settingsDraft:null,
   wordModal:null,
   aiPrompt:'',
@@ -506,6 +517,25 @@ async function loadAllDataFromSheet(){
 }
 
 function todayStr(){ return new Date().toISOString().slice(0,10); }
+function currentYearMonth(){ return todayStr().slice(0,7); }
+function ensureAttendanceFresh(){
+  const p = STATE.progress;
+  if(!p.attendance) p.attendance = {month:'', days:[]};
+  const ym = currentYearMonth();
+  if(p.attendance.month !== ym){
+    p.attendance = {month: ym, days: []};
+  }
+}
+const ATTENDANCE_TIERS = [
+  {count:10, amount:5000},
+  {count:20, amount:25000},
+  {count:30, amount:100000}
+];
+function currentAttendanceTier(days){
+  let reached = null;
+  for(const t of ATTENDANCE_TIERS){ if(days>=t.count) reached=t; }
+  return reached;
+}
 function addDays(dateStr, n){ const d=new Date(dateStr+'T00:00:00'); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
 function monthsBetween(birth){
   const b=new Date(birth), n=new Date();
@@ -736,8 +766,10 @@ async function loadState(){
   STATE.profile = lsGet('profile');
   STATE.progress = lsGet('progress');
   if(!STATE.progress){
-    STATE.progress = {streak:0, lastCompleted:null, wrongNotes:[], favorites:[], usageLog:{}, seenIds:[], todayQueueDate:null, todayQueueIds:[]};
+    STATE.progress = {streak:0, lastCompleted:null, wrongNotes:[], favorites:[], usageLog:{}, seenIds:[], todayQueueDate:null, todayQueueIds:[], attendance:{month:'', days:[]}};
   }
+  if(!STATE.progress.attendance) STATE.progress.attendance = {month:'', days:[]};
+  ensureAttendanceFresh();
   STATE.screen = STATE.profile ? 'home' : 'onboarding';
   render();
   loadAllDataFromSheet();
@@ -846,7 +878,6 @@ function screenHome(){
     results = DATA.filter(d=> (d.meaning+d.tag+d.pattern+d.answer).toLowerCase().includes(q));
   }
   return `
-  <div style="background:#ff3b30; color:#fff; text-align:center; font-weight:800; font-size:13px; padding:8px; border-radius:8px; margin-bottom:12px;">🔧 빌드 확인용 표시: BUILD-CHECK-002 (이 글자가 보이면 최신 파일입니다)</div>
   <div class="home-header">
     <div>
       <div class="eyebrow">${STATE.profile.name} · ${months}개월 (${band})</div>
@@ -868,6 +899,8 @@ function screenHome(){
       </div>
     </div>
   </div>
+
+  ${attendanceCardHtml()}
 
   <div class="search-box" style="position:relative;">
     <input type="text" id="home-search" placeholder="지금 상황을 검색해보세요 (예: 흘렸을 때, 낙서)" value="${escapeHtml(STATE.searchTerm)}">
@@ -979,6 +1012,31 @@ async function runAiGenerate(situ){
   }
   renderAppOnly();
 }
+function attendanceCardHtml(){
+  ensureAttendanceFresh();
+  const att = STATE.progress.attendance;
+  const days = att.days.length;
+  const checkedToday = att.days.includes(todayStr());
+  const tier = currentAttendanceTier(days);
+  const tierRow = ATTENDANCE_TIERS.map(t=>{
+    const reached = days >= t.count;
+    return `<div style="flex:1; text-align:center; padding:8px 4px; border-radius:10px; background:${reached?'var(--ink)':'var(--bg-deep)'}; color:${reached?'#fff':'var(--ink-soft)'};">
+      <div style="font-size:12px; font-weight:700;">${t.count}일</div>
+      <div style="font-size:11.5px; margin-top:2px;">₩${t.amount.toLocaleString()}</div>
+    </div>`;
+  }).join('<div style="width:6px;"></div>');
+  return `
+  <div class="card" style="margin-bottom:20px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+      <div class="eyebrow">이번 달 출석</div>
+      <div style="font-size:13px; font-weight:700;">${days}일째</div>
+    </div>
+    <div style="display:flex; margin-bottom:12px;">${tierRow}</div>
+    ${tier ? `<div style="font-size:12px; color:var(--ink-soft); margin-bottom:10px;">현재 달성: ${tier.count}일 · ₩${tier.amount.toLocaleString()} (구간별 보상이라 30일 채우면 ₩100,000만 받는 방식입니다)</div>` : ''}
+    <button class="btn-primary" id="attendance-check" style="width:100%;" ${checkedToday?'disabled':''}>${checkedToday ? '✓ 오늘 출석 완료' : '오늘 출석하기'}</button>
+    <div style="font-size:11px; color:var(--ink-soft); margin-top:8px;">매달 1일에 자동으로 초기화돼요</div>
+  </div>`;
+}
 function aiHelperCardHtml(){
   const ai = STATE.ai;
   const tagChipHtml = (t, active)=>`<button class="btn-ghost ai-tag-chip" data-tag="${escapeHtml(t)}" style="padding:6px 12px; font-size:13px; margin:4px 6px 0 0; ${active?'background:var(--ink); color:#fff;':''}">${escapeHtml(t)}</button>`;
@@ -1063,6 +1121,24 @@ function bindHome(){
   if(backBtn) backBtn.onclick = ()=>{ STATE.searchTerm=''; render(); };
   const aiInput = document.getElementById('ai-situation');
   if(aiInput) aiInput.oninput = (e)=>{ STATE.aiPrompt = e.target.value; };
+
+  const attendanceBtn = document.getElementById('attendance-check');
+  if(attendanceBtn) attendanceBtn.onclick = async ()=>{
+    ensureAttendanceFresh();
+    const att = STATE.progress.attendance;
+    const today = todayStr();
+    if(att.days.includes(today)) return;
+    const before = currentAttendanceTier(att.days.length);
+    att.days.push(today);
+    const after = currentAttendanceTier(att.days.length);
+    await saveProgress();
+    if(after && (!before || after.count !== before.count)){
+      showToast(`🎉 ${after.count}일 출석 달성! ₩${after.amount.toLocaleString()}`);
+    } else {
+      showToast('오늘 출석 완료!');
+    }
+    renderAppOnly();
+  };
 
   const aiBtn = document.getElementById('ai-ask');
   if(aiBtn) aiBtn.onclick = ()=> runAiGenerate((STATE.aiPrompt||'').trim());
@@ -1301,14 +1377,19 @@ function quizMultipleChoice(it, mode){
 function quizChunk(it){
   const q = STATE.quiz;
   return `
-  <div class="quiz-prompt">순서대로 눌러서 문장을 완성해보세요</div>
+  <div class="quiz-prompt">순서대로 눌러서 문장을 완성해보세요 (담은 조각을 다시 누르면 취소돼요)</div>
   <div class="chunk-area" id="chunk-area">
-    ${q.chunkAssembled.map(c=>`<span class="chunk">${escapeHtml(c.split('#')[0])}</span>`).join('') || '<span style="color:var(--ink-soft); font-size:13px;">여기에 순서대로 쌓여요</span>'}
+    ${q.chunkAssembled.length ? q.chunkAssembled.map((c,idx)=>`<button class="chunk" data-remove-idx="${idx}" ${q.answered?'disabled':''}>${escapeHtml(c.split('#')[0])} ✕</button>`).join('') : '<span style="color:var(--ink-soft); font-size:13px;">여기에 순서대로 쌓여요</span>'}
   </div>
   <div class="chunk-pool">
     ${q.chunkPool.map((c,i)=>`<button class="chunk ${q.chunkAssembled.includes(c+'#'+i)?'used':''}" data-chunk-idx="${i}" ${q.answered?'disabled':''}>${escapeHtml(c)}</button>`).join('')}
   </div>
-  ${!q.answered ? `<button class="btn-ghost" id="chunk-check" ${q.chunkAssembled.length===0?'disabled':''}>정답 확인</button>` : ''}
+  ${!q.answered ? `
+    <div style="display:flex; gap:8px; margin-top:10px;">
+      <button class="btn-ghost" id="chunk-clear" ${q.chunkAssembled.length===0?'disabled':''}>🔄 처음부터 다시</button>
+      <button class="btn-primary" id="chunk-check" style="flex:1;" ${q.chunkAssembled.length===0?'disabled':''}>정답 확인</button>
+    </div>
+  ` : ''}
   `;
 }
 function quizSpeak(it){
@@ -1351,11 +1432,17 @@ function quizAB(it){
 }
 function feedbackBlock(it){
   const q = STATE.quiz;
+  const song = songInfoForTag(it.tag);
+  const songUrl = 'https://www.youtube.com/results?search_query=' + encodeURIComponent(song.q);
   return `
   <div class="feedback ${q.isCorrect?'ok':'no'}">
     <div class="en">${renderSentenceInteractive(it, STATE.profile.name)}</div>
     <div class="kr">${fillName(it.meaning, STATE.profile.name)}</div>
     <div class="tip">${it.type==='A-B뉘앙스' ? (it.abNote||it.tip) : it.tip}</div>
+    <div style="display:flex; gap:8px; margin-top:12px;">
+      <button class="btn-ghost" id="feedback-play" style="flex:1;">🔊 전체 문장 발음 듣기</button>
+      <a class="btn-ghost" href="${songUrl}" target="_blank" rel="noopener" style="flex:1; text-align:center; text-decoration:none; display:flex; align-items:center; justify-content:center;">🎵 관련 동요 찾기</a>
+    </div>
     <div style="font-size:11px; color:var(--ink-soft); margin-top:10px;">💡 단어를 눌러보면 사전이 열려요</div>
   </div>
   ${(!q.isCorrect && q.reasonPending) ? `
@@ -1417,6 +1504,15 @@ function bindQuiz(){
       render();
     };
   });
+  document.querySelectorAll('[data-remove-idx]').forEach(b=>{
+    b.onclick = ()=>{
+      const idx = parseInt(b.dataset.removeIdx);
+      q.chunkAssembled.splice(idx, 1);
+      render();
+    };
+  });
+  const chunkClear = document.getElementById('chunk-clear');
+  if(chunkClear) chunkClear.onclick = ()=>{ q.chunkAssembled = []; render(); };
   const chunkCheck = document.getElementById('chunk-check');
   if(chunkCheck) chunkCheck.onclick = ()=>{
     const built = q.chunkAssembled.map(k=>k.split('#')[0]).join(' ');
@@ -1431,6 +1527,9 @@ function bindQuiz(){
   if(speakMic) speakMic.onclick = ()=> startSTT(it);
   const speakGiveup = document.getElementById('speak-giveup');
   if(speakGiveup) speakGiveup.onclick = ()=>{ markAnswer(false, q.sttResult); render(); };
+
+  const feedbackPlay = document.getElementById('feedback-play');
+  if(feedbackPlay) feedbackPlay.onclick = ()=> playNaturalTts(plainFullSentence(it, STATE.profile.name));
 
   document.querySelectorAll('[data-reason]').forEach(b=>{
     b.onclick = ()=> submitReason(b.dataset.reason);
@@ -1630,18 +1729,30 @@ function buildRadioList(){
   if(r.sourceTag==='favorites') return STATE.progress.favorites.map(id=>DATA.find(d=>d.id===id)).filter(Boolean);
   return DATA.filter(d=>d.tag===r.sourceTag);
 }
+/* SONG_QUERY에 없는 태그(신규 카테고리, today/favorites처럼 여러 카테고리가 섞인 목록)는
+   막연한 'Super Simple Songs' 검색으로 빠지지 않고, 태그명 기반의 구체적인 검색어를 쓴다. */
+function songInfoForTag(tag){
+  if(SONG_QUERY[tag]) return SONG_QUERY[tag];
+  if(tag==='today' || tag==='favorites') return { q:'toddler English learning songs playlist', verified:false, title:null };
+  return { q:(TAG_LABEL[tag]||tag) + ' kids song nursery rhyme', verified:false, title:null };
+}
 function screenRadio(){
   const r = STATE.radio;
   const list = buildRadioList();
-  const songQuery = SONG_QUERY[r.sourceTag] || SONG_QUERY.default;
+  const songQuery = songInfoForTag(r.sourceTag);
   return `
   <h2 style="font-size:22px; margin-bottom:16px;">흘려듣기 모드</h2>
   <div class="radio-visual"><span class="wave">${r.playing ? '🔊' : '📻'}</span></div>
   <div class="section-title">재생 목록</div>
-  <div class="chip-row" style="overflow-x:auto; flex-wrap:nowrap;">
+  <div class="chip-row" id="radio-src-row" style="overflow-x:auto; flex-wrap:nowrap;">
     <button style="flex:0 0 auto;" class="${r.sourceTag==='today'?'active':''}" data-src="today">오늘 5문장</button>
     <button style="flex:0 0 auto;" class="${r.sourceTag==='favorites'?'active':''}" data-src="favorites">즐겨찾기</button>
     ${Object.keys(TAG_LABEL).map(t=>`<button style="flex:0 0 auto;" class="${r.sourceTag===t?'active':''}" data-src="${t}">${TAG_LABEL[t]}</button>`).join('')}
+  </div>
+  <div class="section-title">재생 방식</div>
+  <div class="chip-row">
+    <button class="${r.mode==='bilingual'?'active':''}" data-mode="bilingual">영어 + 한글 해석</button>
+    <button class="${r.mode==='enOnly'?'active':''}" data-mode="enOnly">영어만 연속</button>
   </div>
   <div class="section-title">자동 종료 타이머</div>
   <div class="chip-row">
@@ -1665,10 +1776,20 @@ function screenRadio(){
 }
 function bindRadio(){
   document.querySelectorAll('[data-src]').forEach(b=>{
-    b.onclick = ()=>{ STATE.radio.sourceTag = b.dataset.src; STATE.radio.idx=0; render(); };
+    b.onclick = ()=>{
+      const row = document.getElementById('radio-src-row');
+      const scrollLeft = row ? row.scrollLeft : 0;
+      STATE.radio.sourceTag = b.dataset.src; STATE.radio.idx=0;
+      render();
+      const newRow = document.getElementById('radio-src-row');
+      if(newRow) newRow.scrollLeft = scrollLeft;
+    };
   });
   document.querySelectorAll('[data-min]').forEach(b=>{
     b.onclick = ()=>{ STATE.radio.minutes = parseInt(b.dataset.min); render(); };
+  });
+  document.querySelectorAll('[data-mode]').forEach(b=>{
+    b.onclick = ()=>{ STATE.radio.mode = b.dataset.mode; render(); };
   });
   document.getElementById('radio-toggle').onclick = ()=>{
     const r = STATE.radio;
@@ -1676,7 +1797,7 @@ function bindRadio(){
   };
   const songBtn = document.getElementById('song-link');
   if(songBtn) songBtn.onclick = ()=>{
-    const info = SONG_QUERY[STATE.radio.sourceTag] || SONG_QUERY.default;
+    const info = songInfoForTag(STATE.radio.sourceTag);
     window.open('https://www.youtube.com/results?search_query=' + encodeURIComponent(info.q), '_blank');
   };
 }
@@ -1693,13 +1814,18 @@ function playRadio(){
       window.speechSynthesis.cancel();
       const u1 = new SpeechSynthesisUtterance(plainFullSentence(it, STATE.profile.name));
       u1.lang='en-US'; u1.rate=0.85; u1.pitch=1.05;
-      u1.onend = ()=>{
-        const u2 = new SpeechSynthesisUtterance(fillName(it.meaning, STATE.profile.name));
-        u2.lang='ko-KR'; u2.rate=1.0;
-        u2.onend = ()=>{ r.idx++; renderAppOnly(); if(r.playing) setTimeout(playNext, 500); };
-        window.speechSynthesis.speak(u2);
-      };
-      window.speechSynthesis.speak(u1);
+      if(r.mode==='enOnly'){
+        u1.onend = ()=>{ r.idx++; renderAppOnly(); if(r.playing) setTimeout(playNext, 700); };
+        window.speechSynthesis.speak(u1);
+      } else {
+        u1.onend = ()=>{
+          const u2 = new SpeechSynthesisUtterance(fillName(it.meaning, STATE.profile.name));
+          u2.lang='ko-KR'; u2.rate=1.0;
+          u2.onend = ()=>{ r.idx++; renderAppOnly(); if(r.playing) setTimeout(playNext, 500); };
+          window.speechSynthesis.speak(u2);
+        };
+        window.speechSynthesis.speak(u1);
+      }
     }catch(e){ stopRadio(); }
   };
   playNext();
@@ -1734,8 +1860,9 @@ function screenSettings(){
 
   <div class="section-title">알림</div>
   <div class="card" style="margin-bottom:24px;">
-    <div class="settings-row"><span class="lbl">오늘의 한마디 알림</span><span class="val">08:00</span></div>
-    <div style="font-size:11.5px; color:var(--ink-soft); margin-top:8px; line-height:1.6;">💡 이 프로토타입에서는 실제 푸시 발송은 지원되지 않아요. 실제 앱에서는 출근/퇴근 시간에 맞춰 문장 하나를 보내드릴 예정이에요.</div>
+    <div class="settings-row"><span class="lbl">오늘의 한마디 알림</span><span class="val" id="notif-status">확인 중...</span></div>
+    <div style="font-size:11.5px; color:var(--ink-soft); margin:8px 0 12px; line-height:1.6;">💡 알림을 켜두면 매일 정해진 시각에 오늘의 문장을 잊지 않도록 알려드려요.</div>
+    <button class="btn-primary" id="notif-enable" style="width:100%;">🔔 알림 받기</button>
   </div>
 
   <div class="section-title">데이터</div>
@@ -1743,6 +1870,27 @@ function screenSettings(){
   `;
 }
 function bindSettings(){
+  const notifStatus = document.getElementById('notif-status');
+  const notifBtn = document.getElementById('notif-enable');
+  if(window.OneSignalDeferred){
+    OneSignalDeferred.push(async function(OneSignal){
+      try{
+        const enabled = OneSignal.Notifications.permission;
+        if(notifStatus) notifStatus.textContent = enabled ? '켜짐 ✓' : '꺼짐';
+        if(notifBtn && enabled){ notifBtn.textContent = '✓ 알림 켜짐'; notifBtn.disabled = true; }
+      }catch(e){ if(notifStatus) notifStatus.textContent = '지원 안 됨'; }
+    });
+  } else if(notifStatus){ notifStatus.textContent = '지원 안 됨'; }
+  if(notifBtn) notifBtn.onclick = ()=>{
+    if(!window.OneSignalDeferred){ showToast('이 브라우저에서는 알림을 지원하지 않아요'); return; }
+    OneSignalDeferred.push(async function(OneSignal){
+      try{
+        await OneSignal.Notifications.requestPermission();
+        showToast('알림이 켜졌어요!');
+        render();
+      }catch(e){ showToast('알림 권한 요청에 실패했어요'); }
+    });
+  };
   document.getElementById('set-save').onclick = async ()=>{
     const name = document.getElementById('set-name').value.trim();
     const birth = document.getElementById('set-birth').value;
@@ -1754,7 +1902,7 @@ function bindSettings(){
   };
   document.getElementById('set-reset').onclick = async ()=>{
     if(!confirm('모든 학습 기록이 사라져요. 초기화할까요?')) return;
-    STATE.progress = {streak:0, lastCompleted:null, wrongNotes:[], favorites:[], usageLog:{}, seenIds:[], todayQueueDate:null, todayQueueIds:[]};
+    STATE.progress = {streak:0, lastCompleted:null, wrongNotes:[], favorites:[], usageLog:{}, seenIds:[], todayQueueDate:null, todayQueueIds:[], attendance:{month:'', days:[]}};
     await saveProgress();
     showToast('초기화했어요');
     render();

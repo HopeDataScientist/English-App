@@ -1,3 +1,5 @@
+importScripts('https://cdn.onesignal.com/sdks/OneSignalSDKWorker.js');
+
 const CACHE_NAME = 'today-five-sentences-v2';
 const APP_SHELL = ['./index.html', './manifest.json', './icon-192.png', './icon-512.png'];
 
