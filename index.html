@@ -338,11 +338,15 @@
   <script>
     window.OneSignalDeferred = window.OneSignalDeferred || [];
     OneSignalDeferred.push(async function(OneSignal) {
-      await OneSignal.init({
-        appId: "c1dd7842-95b8-4d43-9315-2945fb29cd7a",
-        serviceWorkerPath: "sw.js",
-        serviceWorkerParam: { scope: "./" }
-      });
+      try{
+        await OneSignal.init({
+          appId: "c1dd7842-95b8-4d43-9315-2945fb29cd7a",
+          serviceWorkerPath: "sw.js",
+          serviceWorkerParam: { scope: "/English-App/" }
+        });
+      }catch(e){
+        console.error('OneSignal init 실패:', e);
+      }
     });
   </script>
 </head>
