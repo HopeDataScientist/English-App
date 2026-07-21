@@ -334,7 +334,7 @@
   }
   .modal-sheet .close-x{background:none;border:none;font-size:14px;color:var(--ink-soft);font-weight:600;}
 </style>
-  <script src="https://cdn.onesignal.com/sdks/OneSignalSDK.page.js" defer></script>
+  <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
   <script>
     window.OneSignalDeferred = window.OneSignalDeferred || [];
     OneSignalDeferred.push(async function(OneSignal) {
@@ -1873,7 +1873,10 @@ function bindSettings(){
   const notifStatus = document.getElementById('notif-status');
   const notifBtn = document.getElementById('notif-enable');
   if(window.OneSignalDeferred){
+    let resolved = false;
+    setTimeout(()=>{ if(!resolved && notifStatus) notifStatus.textContent = '불러오기 실패 (새로고침 필요)'; }, 6000);
     OneSignalDeferred.push(async function(OneSignal){
+      resolved = true;
       try{
         const enabled = OneSignal.Notifications.permission;
         if(notifStatus) notifStatus.textContent = enabled ? '켜짐 ✓' : '꺼짐';
