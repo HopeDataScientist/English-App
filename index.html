@@ -846,6 +846,7 @@ function screenHome(){
     results = DATA.filter(d=> (d.meaning+d.tag+d.pattern+d.answer).toLowerCase().includes(q));
   }
   return `
+  <div style="background:#ff3b30; color:#fff; text-align:center; font-weight:800; font-size:13px; padding:8px; border-radius:8px; margin-bottom:12px;">🔧 빌드 확인용 표시: BUILD-CHECK-002 (이 글자가 보이면 최신 파일입니다)</div>
   <div class="home-header">
     <div>
       <div class="eyebrow">${STATE.profile.name} · ${months}개월 (${band})</div>
