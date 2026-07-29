@@ -1,7 +1,7 @@
 {
   "name": "오늘의 다섯 문장",
   "short_name": "다섯문장",
-  "description": "22개월 아이와 함께 매일 다섯 문장씩 배우는 생활영어 퀴즈 앱",
+  "description": "AI가 만들어주는 상황별 생활영어 문장으로 매일 다섯 문장씩 배우는 퀴즈 앱",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
