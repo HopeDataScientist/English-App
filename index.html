@@ -1135,10 +1135,19 @@ function bindHome(){
     if(queue.length===0){ showToast('아직 만들어진 문장이 없어요. 상황 검색에서 먼저 만들어보세요.'); return; }
     startQuiz(queue);
   };
-  const search = document.getElementById('home-search');
-  if(search){
-    search.oninput = (e)=>{ STATE.searchTerm = e.target.value; renderAppOnly(); };
-  }
+const search = document.getElementById('home-search');
+if(search){
+    search.oninput = (e)=>{
+        const cursorPos = e.target.selectionStart;
+        STATE.searchTerm = e.target.value;
+        renderAppOnly();
+        const newInput = document.getElementById('home-search');
+        if(newInput){
+            newInput.focus();
+            newInput.setSelectionRange(cursorPos, cursorPos);
+        }
+    };
+}
   const clearBtn = document.getElementById('search-clear');
   if(clearBtn) clearBtn.onclick = ()=>{ STATE.searchTerm=''; render(); };
   const backBtn = document.getElementById('search-back');
