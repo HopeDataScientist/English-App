@@ -1137,16 +1137,33 @@ function bindHome(){
   };
 const search = document.getElementById('home-search');
 if(search){
-    search.oninput = (e)=>{
-        const cursorPos = e.target.selectionStart;
-        STATE.searchTerm = e.target.value;
-        renderAppOnly();
-        const newInput = document.getElementById('home-search');
-        if(newInput){
-            newInput.focus();
-            newInput.setSelectionRange(cursorPos, cursorPos);
-        }
-    };
+  let isComposing = false;
+
+  search.addEventListener('compositionstart', ()=>{ isComposing = true; });
+
+  search.addEventListener('compositionend', (e)=>{
+    isComposing = false;
+    STATE.searchTerm = e.target.value;
+    renderAppOnly();
+    const newInput = document.getElementById('home-search');
+    if(newInput){
+      newInput.focus();
+      const len = newInput.value.length;
+      try{ newInput.setSelectionRange(len, len); }catch(err){}
+    }
+  });
+
+  search.oninput = (e)=>{
+    STATE.searchTerm = e.target.value;
+    if(isComposing) return; // 한글 조합 중에는 다시 그리지 않음 (그리면 조합이 깨짐)
+    const cursorPos = e.target.selectionStart;
+    renderAppOnly();
+    const newInput = document.getElementById('home-search');
+    if(newInput){
+      newInput.focus();
+      try{ newInput.setSelectionRange(cursorPos, cursorPos); }catch(err){}
+    }
+  };
 }
   const clearBtn = document.getElementById('search-clear');
   if(clearBtn) clearBtn.onclick = ()=>{ STATE.searchTerm=''; render(); };
